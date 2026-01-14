@@ -1,25 +1,40 @@
-import React, { useState } from 'react';
-import { SafeAreaView, View, TouchableOpacity, Text, StatusBar, Platform } from 'react-native';
+import "./global.css";    // ✅ ADD THIS
+import React, { useState, useEffect } from 'react';
+import { View, TouchableOpacity, Text, StatusBar, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LayoutDashboard, ScanLine, ClipboardList } from 'lucide-react-native';
 import Dashboard from './src/Dashboard';
 import Scanner from './src/Scanner';
 import DispatchLog from './src/DispatchLog';
 import { INITIAL_ORDERS, INITIAL_TRUCKS } from './src/constants'; 
+import * as Device from 'expo-device';
 import { Order, LogEntry, OrderStatus, ScanAction } from './src/types';
+
 
 export default function App() {
   const [view, setView] = useState('DASHBOARD');
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  const [deviceName, setDeviceName] = useState("Unknown Driver");
+  useEffect(() => {
+    // This gets names like "Howe's iPhone" or "Samsung Galaxy"
+    if (Device.deviceName) {
+      setDeviceName(Device.deviceName);
+    } else if (Device.modelName) {
+      setDeviceName(Device.modelName);
+    }
+  }, []);
   // Simple mock handler for scanning
   const handleScan = (orderId: string, action: ScanAction, isMatch: boolean, truckId?: string, proofImages?: string[], gps?: string, signature?: string) => {
     const timestamp = Date.now();
+    
     const newLog: LogEntry = {
       id: timestamp.toString(),
       timestamp,
       orderId,
-      scannedBy: 'HOWE-MOBILE',
+      scannedBy: deviceName,
       action: action,
       truckId,
       gpsLocation: gps,
@@ -35,6 +50,8 @@ export default function App() {
           ...o, 
           status: action === 'PICKUP' ? OrderStatus.PICKED_UP : OrderStatus.LOADED,
           lastAction: action,
+          lastScannedAt: timestamp,
+          lastScannedBy: deviceName, // Also update order status with name
           proofImages: proofImages,
           signature: signature
         } : o
@@ -59,7 +76,7 @@ export default function App() {
   };
 
   return (
-    // Force a white background on the whole app to prevent the "Black Void"
+    <SafeAreaProvider>
     <SafeAreaView className="flex-1 bg-slate-50">
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       
@@ -96,6 +113,7 @@ export default function App() {
         />
       </View>
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

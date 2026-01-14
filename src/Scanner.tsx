@@ -1,10 +1,11 @@
 // src/Scanner.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-// Note: We import CameraType type for safety
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
-import { X, Truck, Package, Plus, CheckCircle, Trash2, FileText, MapPinned, Barcode, Hash, CalendarDays, Info, AlertCircle, RefreshCcw, ZoomIn, ZoomOut, XCircle } from 'lucide-react-native';
+import { X, Truck, Package, Plus, CheckCircle, Trash2, FileText, MapPinned, Barcode, Hash, CalendarDays, Info, AlertCircle, ZoomIn, ZoomOut, XCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+// 1. IMPORT THE MANIPULATOR
+import * as ImageManipulator from 'expo-image-manipulator'; 
 import { Order, ScanAction } from './types';
 
 type ScanState = 'IDLE' | 'ACTION_SELECT' | 'CHECKLIST' | 'TRUCK_SELECT' | 'PHOTO_PROOF' | 'SIGNATURE' | 'SUCCESS' | 'ERROR';
@@ -19,8 +20,7 @@ interface ScannerProps {
 export default function Scanner({ trucks, orders, onScan, goBack }: ScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
 
-// --- NEW CAMERA STATES ---
-  const [zoom, setZoom] = useState(0); // 0 is widest, 1 is max zoom
+  const [zoom, setZoom] = useState(0);
   const [facing, setFacing] = useState<CameraType>('back');
 
   const [scanState, setScanState] = useState<ScanState>('IDLE');
@@ -120,15 +120,33 @@ export default function Scanner({ trucks, orders, onScan, goBack }: ScannerProps
     setScanState('PHOTO_PROOF');
   };
 
+  // --- UPDATED PHOTO FUNCTION WITH COMPRESSION ---
   const takePhoto = async () => {
+    // 1. Launch Camera normally
     let result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.5,
-      base64: true,
+      quality: 1, // Take high quality first
+      base64: false, // Don't ask for base64 (too heavy), we will use URI
     });
 
     if (!result.canceled && result.assets[0]) {
-      setProofImages([...proofImages, `data:image/jpeg;base64,${result.assets[0].base64}`]);
+      try {
+        // 2. Compress and Resize
+        const manipulatedImage = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: 1024 } }], // Resize width to 1024px (height adjusts auto)
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } // Compress to 70% quality
+        );
+
+        // 3. Save the new Compressed URI
+        // This file is now ~150KB instead of 5MB
+        setProofImages([...proofImages, manipulatedImage.uri]);
+
+      } catch (error) {
+        console.log("Compression Error:", error);
+        // Fallback: use original if compression fails
+        setProofImages([...proofImages, result.assets[0].uri]);
+      }
     }
   };
 
@@ -159,6 +177,9 @@ export default function Scanner({ trucks, orders, onScan, goBack }: ScannerProps
     setScanState('SUCCESS');
   };
 
+  const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1));
+  const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0));
+  
   if (!permission) return <View />;
   if (!permission.granted) {
     return (
@@ -170,21 +191,7 @@ export default function Scanner({ trucks, orders, onScan, goBack }: ScannerProps
       </View>
     );
   }
-const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10%
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0)); // Decrease by 10%
-  const toggleCameraFacing = () => setFacing(current => (current === 'back' ? 'front' : 'back'));
 
-  if (!permission) return <View />;
-  if (!permission.granted) {
-    return (
-      <View className="flex-1 items-center justify-center bg-slate-50">
-        <Text className="text-slate-800 mb-4">We need your camera permission</Text>
-        <TouchableOpacity onPress={requestPermission} className="bg-brand-600 px-6 py-3 rounded-lg">
-          <Text className="text-white font-bold">Grant Permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
   // IDLE - Scanner Screen
   if (scanState === 'IDLE') {
     return (
@@ -195,8 +202,8 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
       >
         <CameraView 
           style={StyleSheet.absoluteFillObject} 
-          facing={facing} // <--- UPDATED
-          zoom={zoom}     // <--- UPDATED
+          facing={facing}
+          zoom={zoom}
           onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
           barcodeScannerSettings={{
             barcodeTypes: ["qr"],
@@ -228,29 +235,17 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
             </TouchableOpacity>
         </View>
         
-{/* Scanner Frame - FORCED CENTER */}
-        {/* StyleSheet.absoluteFill forces this to ignore everything else and float on top */}
+        {/* Scanner Frame */}
         <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: 10 }]} pointerEvents="none">
-          
-          {/* Visual Frame */}
           <View className="w-72 h-72 relative">
-            {/* Corners */}
             <View className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-brand-500 rounded-tl-3xl" />
             <View className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-brand-500 rounded-tr-3xl" />
             <View className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-brand-500 rounded-bl-3xl" />
             <View className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-brand-500 rounded-br-3xl" />
-            
-            {/* Center Crosshair (Optional - helps you see if it's truly centered) */}
-            <View className="absolute top-1/2 left-1/2 w-4 h-4 -ml-2 -mt-2 opacity-50">
-                <View className="absolute w-4 h-0.5 bg-brand-500 top-2" />
-                <View className="absolute h-4 w-0.5 bg-brand-500 left-2" />
-            </View>
           </View>
-
-
         </View>
         
-        {/* Manual Entry Section - Fixed at bottom with keyboard handling */}
+        {/* Manual Entry Section */}
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           className="absolute bottom-0 left-0 right-0 z-20"
@@ -278,7 +273,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
               </TouchableOpacity>
             </View>
             
-            {/* Simulate Scan button */}
             <TouchableOpacity 
               onPress={() => {
                 const random = orders[Math.floor(Math.random() * orders.length)];
@@ -300,7 +294,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
 
     return (
       <View className="flex-1 bg-slate-50">
-        {/* Header */}
         <View className="bg-white border-b border-slate-200 px-4 py-3 flex-row justify-between items-center shadow-sm">
           <View className="flex-row items-center gap-2">
             <View className="w-2 h-2 bg-green-500 rounded-full" />
@@ -312,7 +305,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
         </View>
 
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Status Banner */}
           <View className={`px-6 py-4 flex-row justify-between items-center ${
             scannedOrder.status === 'LOADED' ? 'bg-orange-100 border-b border-orange-200' :
             scannedOrder.status === 'PICKED_UP' ? 'bg-blue-100 border-b border-blue-200' :
@@ -337,7 +329,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
           </View>
 
           <View className="p-4 space-y-4">
-            {/* Order & Job Info */}
             <View className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <View className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex-row justify-between items-center">
                 <Text className="text-xs font-bold uppercase text-slate-500">Order & Job Info</Text>
@@ -374,7 +365,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
               </View>
             </View>
 
-            {/* Logistics */}
             <View className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <View className="bg-slate-50 px-4 py-2 border-b border-slate-100">
                 <Text className="text-xs font-bold uppercase text-slate-500">Logistics</Text>
@@ -400,7 +390,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
               </View>
             </View>
 
-            {/* Packing List */}
             <View className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <View className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex-row justify-between items-center">
                 <Text className="text-xs font-bold uppercase text-slate-500">Packing List</Text>
@@ -455,7 +444,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
               </View>
             </View>
 
-            {/* Proof & Notes */}
             {scannedOrder.proofImages && scannedOrder.proofImages.length > 0 && (
               <View className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <View className="bg-slate-50 px-4 py-2 border-b border-slate-100">
@@ -475,7 +463,6 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
           </View>
         </ScrollView>
         
-        {/* Bottom Actions - Fixed */}
         <View className="p-4 bg-white border-t border-slate-200 shadow-lg flex-row gap-3">
           <TouchableOpacity 
             onPress={() => handleActionSelect('PICKUP')}
@@ -630,7 +617,7 @@ const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 1)); // Increase by 10
     );
   }
 
-  // SIGNATURE - Simplified for React Native (would need a signature library for full implementation)
+  // SIGNATURE
   if (scanState === 'SIGNATURE') {
     return (
       <View className="flex-1 bg-slate-50">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Image, ScrollView, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView, Modal, TextInput, Alert, Platform } from 'react-native';
 import { Printer, Clock, Plus, X, MapPin, Truck as TruckIcon, Trash2, Package, Eye, PenTool } from 'lucide-react-native';
 import { Order, OrderStatus, Truck, BoxItem } from './types';
 import * as Print from 'expo-print';
@@ -39,10 +39,12 @@ export default function Dashboard({ orders, trucks, onAddOrder, onDeleteOrder }:
   };
 
   const handleItemChange = (index: number, field: keyof BoxItem, value: string | number) => {
-    const newItems = [...items];
-    // @ts-ignore
-    newItems[index][field] = value;
-    setItems(newItems);
+    setItems(prevItems => {
+      const newItems = [...prevItems];
+      // Type-safe update
+      newItems[index] = { ...newItems[index], [field]: value };
+      return newItems;
+    });
   };
 
   const handleSubmit = () => {
@@ -118,22 +120,26 @@ export default function Dashboard({ orders, trucks, onAddOrder, onDeleteOrder }:
   };
 
   const handleDelete = (orderId: string) => {
-    Alert.alert(
-      'Delete Order',
-      'Are you sure you want to delete this order?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            if (onDeleteOrder) {
-              onDeleteOrder(orderId);
-            }
-          }
+    if (Platform.OS === 'web') {
+        if(confirm('Are you sure you want to delete this order?')) {
+             if (onDeleteOrder) onDeleteOrder(orderId);
         }
-      ]
-    );
+    } else {
+        Alert.alert(
+        'Delete Order',
+        'Are you sure you want to delete this order?',
+        [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+            text: 'Delete', 
+            style: 'destructive',
+            onPress: () => {
+                if (onDeleteOrder) onDeleteOrder(orderId);
+            }
+            }
+        ]
+        );
+    }
   };
 
   // Status Badge Helper
@@ -165,140 +171,151 @@ export default function Dashboard({ orders, trucks, onAddOrder, onDeleteOrder }:
 
   return (
     <View className="flex-1 bg-slate-50">
-      {/* Header */}
-      <View className="px-5 pt-6 pb-4">
-        <Text className="text-3xl font-extrabold text-slate-800 tracking-tight">Live Status Board</Text>
-        <Text className="text-slate-500 mt-1 text-base">Real-time tracking of all active job orders.</Text>
-      </View>
+        
+      {/* --- Main ScrollView wrapper for the whole dashboard --- */}
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
+        
+        {/* Header */}
+        <View className="px-5 pt-6 pb-4">
+            <Text className="text-3xl font-extrabold text-slate-800 tracking-tight">Live Status Board</Text>
+            <Text className="text-slate-500 mt-1 text-base">Real-time tracking of all active job orders.</Text>
+        </View>
 
-      {/* Create Job Order Button */}
-      <View className="px-5 mb-4">
-        <TouchableOpacity 
-          onPress={() => setIsModalOpen(true)}
-          className="bg-brand-600 py-4 rounded-xl flex-row items-center justify-center shadow-lg elevation-5"
-        >
-          <Plus color="white" size={24} strokeWidth={3} />
-          <Text className="text-white font-bold text-lg ml-2">Create Job Order</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Create Job Order Button */}
+        <View className="px-5 mb-4">
+            <TouchableOpacity 
+            onPress={() => setIsModalOpen(true)}
+            className="bg-brand-600 py-4 rounded-xl flex-row items-center justify-center shadow-lg elevation-5"
+            >
+            <Plus color="white" size={24} strokeWidth={3} />
+            <Text className="text-white font-bold text-lg ml-2">Create Job Order</Text>
+            </TouchableOpacity>
+        </View>
 
-      {/* List of Orders */}
-      <FlatList 
-        data={orders}
-        keyExtractor={item => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
-        renderItem={({ item }) => {
-          const truck = trucks.find(t => t.id === item.expectedTruckId);
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${item.id}`;
+        {/* --- RESPONSIVE GRID LAYOUT STARTS HERE --- */}
+        <View className="flex-row flex-wrap px-3">
+            {orders.map((item) => {
+                const truck = trucks.find(t => t.id === item.expectedTruckId);
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${item.id}`;
 
-          return (
-            <View className="bg-white p-5 rounded-2xl mb-5 shadow-sm border border-slate-100 elevation-2">
-              
-              {/* Card Header */}
-              <View className="flex-row justify-between items-start mb-3">
-                {getStatusBadge(item.status)}
-                <Text className="text-xs font-mono font-bold text-slate-300">{item.id}</Text>
-              </View>
-              
-              {/* Hospital Name */}
-              <Text className="text-xl font-bold text-slate-800 leading-6 mb-2">{item.hospitalName}</Text>
-              
-              {/* Truck Info */}
-              <View className="flex-row items-center mb-4">
-                <TruckIcon size={16} color="#94a3b8" />
-                <Text className="text-sm text-slate-500 ml-2 font-medium">{truck?.name || item.expectedTruckId}</Text>
-              </View>
+                return (
+                    /* Wrapper: 
+                       w-full (Mobile: 1 per row)
+                       md:w-1/2 (Tablet: 2 per row)
+                       lg:w-1/3 (Desktop: 3 per row)
+                    */
+                    <View key={item.id} className="w-full md:w-1/2 lg:w-1/3 p-2">
+                        
+                        {/* THE CARD */}
+                        <View className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                            
+                            {/* Card Header */}
+                            <View className="flex-row justify-between items-start mb-3">
+                                {getStatusBadge(item.status)}
+                                <Text className="text-xs font-mono font-bold text-slate-300">{item.id}</Text>
+                            </View>
+                            
+                            {/* Hospital Name */}
+                            <Text className="text-xl font-bold text-slate-800 leading-6 mb-2">{item.hospitalName}</Text>
+                            
+                            {/* Truck Info */}
+                            <View className="flex-row items-center mb-4">
+                                <TruckIcon size={16} color="#94a3b8" />
+                                <Text className="text-sm text-slate-500 ml-2 font-medium">{truck?.name || item.expectedTruckId}</Text>
+                            </View>
 
-              {/* QR and Proof Images */}
-              <View className="flex-row mb-4" style={{ gap: 16 }}>
-                {/* QR Code */}
-                <Image 
-                  source={{ uri: qrUrl }}
-                  style={{ width: 80, height: 80, borderRadius: 8 }}
-                />
-                
-                {/* Proof Image Preview */}
-                <View className="flex-1">
-                  {item.proofImages && item.proofImages.length > 0 ? (
-                    <TouchableOpacity
-                      onPress={() => setSelectedProofData({images: item.proofImages!, signature: item.signature})}
-                      className="w-full h-20 rounded-lg overflow-hidden border border-slate-200 relative"
-                    >
-                      <Image 
-                        source={{ uri: item.proofImages[0] }} 
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                      <View className="absolute inset-0 bg-black/30 items-center justify-center">
-                        <View className="flex-row items-center" style={{ gap: 4 }}>
-                          <Eye size={16} color="white" />
-                          <Text className="text-white text-xs font-bold">View</Text>
+                            {/* QR and Proof Images */}
+                            <View className="flex-row mb-4" style={{ gap: 16 }}>
+                                {/* QR Code */}
+                                <Image 
+                                    source={{ uri: qrUrl }}
+                                    style={{ width: 80, height: 80, borderRadius: 8 }}
+                                />
+                                
+                                {/* Proof Image Preview */}
+                                <View className="flex-1">
+                                    {item.proofImages && item.proofImages.length > 0 ? (
+                                    <TouchableOpacity
+                                        onPress={() => setSelectedProofData({images: item.proofImages!, signature: item.signature})}
+                                        className="w-full h-20 rounded-lg overflow-hidden border border-slate-200 relative"
+                                    >
+                                        <Image 
+                                        source={{ uri: item.proofImages[0] }} 
+                                        style={{ width: '100%', height: '100%' }}
+                                        resizeMode="cover"
+                                        />
+                                        <View className="absolute inset-0 bg-black/30 items-center justify-center">
+                                        <View className="flex-row items-center" style={{ gap: 4 }}>
+                                            <Eye size={16} color="white" />
+                                            <Text className="text-white text-xs font-bold">View</Text>
+                                        </View>
+                                        </View>
+                                        {item.proofImages.length > 1 && (
+                                        <View className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 rounded-full">
+                                            <Text className="text-white text-[10px] font-bold">+{item.proofImages.length - 1}</Text>
+                                        </View>
+                                        )}
+                                    </TouchableOpacity>
+                                    ) : (
+                                    <View className="w-full h-20 bg-slate-50 rounded-lg items-center justify-center border border-dashed border-slate-200">
+                                        <Text className="text-[10px] font-bold text-slate-300">NO PROOF</Text>
+                                    </View>
+                                    )}
+                                </View>
+                            </View>
+
+                            {/* Items List */}
+                            <View className="mb-4 flex-1">
+                                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">Contents</Text>
+                                <View className="bg-slate-50 rounded-xl p-3 border border-dashed border-slate-200">
+                                    {item.items.slice(0, 3).map((item, idx) => (
+                                    <View key={idx} className="flex-row justify-between mb-1">
+                                        <Text className="text-xs text-slate-600 font-medium flex-1" numberOfLines={1}>{item.name}</Text>
+                                        <Text className="text-xs text-slate-400 font-mono">x{item.qty}</Text>
+                                    </View>
+                                    ))}
+                                    {item.items.length > 3 && (
+                                    <Text className="text-[10px] text-slate-400 italic mt-1">+{item.items.length - 3} more items...</Text>
+                                    )}
+                                </View>
+                            </View>
+
+                            {/* Footer */}
+                            <View className="pt-4 border-t border-slate-100 flex-row justify-between items-center mt-auto">
+                                <View className="flex-row items-center" style={{ gap: 8 }}>
+                                    {onDeleteOrder && (
+                                    <TouchableOpacity 
+                                        onPress={() => handleDelete(item.id)}
+                                        className="p-2"
+                                    >
+                                        <Trash2 size={16} color="#ef4444" />
+                                    </TouchableOpacity>
+                                    )}
+                                    <View>
+                                    {item.lastScannedBy ? (
+                                        <Text className="text-xs text-slate-500">
+                                        Last: <Text className="font-bold text-slate-700">{item.lastScannedBy}</Text>
+                                        </Text>
+                                    ) : (
+                                        <Text className="text-xs text-slate-400">Not scanned</Text>
+                                    )}
+                                    </View>
+                                </View>
+                                <TouchableOpacity 
+                                    onPress={() => handlePrint(item)}
+                                    className="flex-row items-center bg-white border border-slate-200 px-3 py-2 rounded-lg shadow-sm"
+                                >
+                                    <Printer size={14} color="#0088CC" />
+                                    <Text className="text-xs font-bold text-brand-600 ml-2">Label</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
-                      </View>
-                      {item.proofImages.length > 1 && (
-                        <View className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 rounded-full">
-                          <Text className="text-white text-[10px] font-bold">+{item.proofImages.length - 1}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  ) : (
-                    <View className="w-full h-20 bg-slate-50 rounded-lg items-center justify-center border border-dashed border-slate-200">
-                      <Text className="text-[10px] font-bold text-slate-300">NO PROOF</Text>
                     </View>
-                  )}
-                </View>
-              </View>
+                );
+            })}
+        </View>
 
-              {/* Items List */}
-              <View className="mb-4">
-                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">Contents</Text>
-                <View className="bg-slate-50 rounded-xl p-3 border border-dashed border-slate-200">
-                  {item.items.slice(0, 3).map((item, idx) => (
-                    <View key={idx} className="flex-row justify-between mb-1">
-                      <Text className="text-xs text-slate-600 font-medium flex-1" numberOfLines={1}>{item.name}</Text>
-                      <Text className="text-xs text-slate-400 font-mono">x{item.qty}</Text>
-                    </View>
-                  ))}
-                  {item.items.length > 3 && (
-                    <Text className="text-[10px] text-slate-400 italic mt-1">+{item.items.length - 3} more items...</Text>
-                  )}
-                </View>
-              </View>
-
-              {/* Footer */}
-              <View className="pt-4 border-t border-slate-100 flex-row justify-between items-center">
-                <View className="flex-row items-center" style={{ gap: 8 }}>
-                  {onDeleteOrder && (
-                    <TouchableOpacity 
-                      onPress={() => handleDelete(item.id)}
-                      className="p-2"
-                    >
-                      <Trash2 size={16} color="#ef4444" />
-                    </TouchableOpacity>
-                  )}
-                  <View>
-                    {item.lastScannedBy ? (
-                      <Text className="text-xs text-slate-500">
-                        Last: <Text className="font-bold text-slate-700">{item.lastScannedBy}</Text>
-                      </Text>
-                    ) : (
-                      <Text className="text-xs text-slate-400">Not scanned yet</Text>
-                    )}
-                  </View>
-                </View>
-                <TouchableOpacity 
-                  onPress={() => handlePrint(item)}
-                  className="flex-row items-center bg-white border border-slate-200 px-4 py-2 rounded-lg shadow-sm"
-                >
-                  <Printer size={14} color="#0088CC" />
-                  <Text className="text-xs font-bold text-brand-600 ml-2">Print Label</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        }}
-      />
+      </ScrollView>
 
       {/* New Job Modal */}
       <Modal
